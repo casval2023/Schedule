@@ -888,6 +888,408 @@ elif page == "管理者":
     st.divider()
 
 
+    # =============================================               phone = st.text_input(
+                        "電話番号"
+                    )
+
+                    memo = st.text_area(
+                        "備考",
+                        placeholder=(
+                            "アレルギーなどございましたら"
+                            "ご記入ください。"
+                        )
+                    )
+
+                    submitted = (
+                        st.form_submit_button(
+                            "この内容で予約する",
+                            type="primary",
+                            use_container_width=True
+                        )
+                    )
+
+
+                    if submitted:
+
+                        if not phone:
+
+                            st.error(
+                                "電話番号を入力してください。"
+                            )
+
+                        else:
+
+                            # 予約直前にもう一度確認
+                            latest_available = (
+                                get_available_times(
+                                    selected_date
+                                )
+                            )
+
+                            if (
+                                reserve_time
+                                not in latest_available
+                            ):
+
+                                st.error(
+                                    "申し訳ありません。"
+                                    "この時間は先ほど予約が入りました。"
+                                )
+
+                            else:
+
+                                df = load_reservations()
+
+                                reservation_id = str(
+                                    uuid.uuid4()
+                                )
+
+                                new_data = {
+                                    "予約ID":
+                                        reservation_id,
+
+                                    "顧客ID":
+                                        st.session_state.customer_id,
+
+                                    "予約日":
+                                        selected_date.strftime(
+                                            "%Y-%m-%d"
+                                        ),
+
+                                    "時間":
+                                        reserve_time,
+
+                                    "名前":
+                                        st.session_state.customer_name,
+
+                                    "人数":
+                                        people,
+
+                                    "電話番号":
+                                        phone,
+
+                                    "備考":
+                                        memo
+                                }
+
+                                df = pd.concat(
+                                    [
+                                        df,
+                                        pd.DataFrame(
+                                            [new_data]
+                                        )
+                                    ],
+                                    ignore_index=True
+                                )
+
+                                save_reservations(
+                                    df
+                                )
+
+                                st.success(
+                                    f"""
+予約を受け付けました。
+
+**{selected_date.strftime('%Y年%m月%d日')}  
+{reserve_time}**
+
+{people}名
+"""
+                                )
+
+                                st.session_state.selected_date = None
+
+
+    # =====================================================
+    # 自分の予約確認・キャンセル
+    # =====================================================
+
+    elif customer_menu == "予約を確認・キャンセル":
+
+        st.subheader(
+            "予約を確認・キャンセル"
+        )
+
+        df = load_reservations()
+
+        my_df = df[
+            df["顧客ID"]
+            ==
+            st.session_state.customer_id
+        ].copy()
+
+        if my_df.empty:
+
+            st.info(
+                "現在予約はありません。"
+            )
+
+        else:
+
+            my_df["予約日_dt"] = pd.to_datetime(
+                my_df["予約日"],
+                errors="coerce"
+            )
+
+            today_ts = pd.Timestamp(
+                date.today()
+            )
+
+            my_df = my_df[
+                my_df["予約日_dt"]
+                >=
+                today_ts
+            ]
+
+            my_df = my_df.sort_values(
+                by=[
+                    "予約日_dt",
+                    "時間"
+                ]
+            )
+
+            if my_df.empty:
+
+                st.info(
+                    "今後の予約はありません。"
+                )
+
+            else:
+
+                for index, row in my_df.iterrows():
+
+                    reservation_date = (
+                        pd.to_datetime(
+                            row["予約日"]
+                        ).strftime(
+                            "%Y年%m月%d日"
+                        )
+                    )
+
+                    with st.container(
+                        border=True
+                    ):
+
+                        st.markdown(
+                            f"""
+### {reservation_date}　{row["時間"]}
+
+**{row["人数"]}名**
+
+電話番号：{row["電話番号"]}
+"""
+                        )
+
+                        if (
+                            pd.notna(row["備考"])
+                            and str(row["備考"]).strip()
+                            and str(row["備考"]) != "nan"
+                        ):
+
+                            st.write(
+                                f'備考：{row["備考"]}'
+                            )
+
+
+                        confirm_key = (
+                            f"confirm_cancel_"
+                            f'{row["予約ID"]}'
+                        )
+
+                        if confirm_key not in st.session_state:
+                            st.session_state[
+                                confirm_key
+                            ] = False
+
+
+                        if not st.session_state[
+                            confirm_key
+                        ]:
+
+                            if st.button(
+                                "この予約をキャンセル",
+                                key=(
+                                    f'cancel_{row["予約ID"]}'
+                                )
+                            ):
+
+                                st.session_state[
+                                    confirm_key
+                                ] = True
+
+                                st.rerun()
+
+                        else:
+
+                            st.warning(
+                                "この予約をキャンセルしますか？"
+                            )
+
+                            col_yes, col_no = (
+                                st.columns(2)
+                            )
+
+                            with col_yes:
+
+                                if st.button(
+                                    "はい、キャンセルする",
+                                    key=(
+                                        f'yes_{row["予約ID"]}'
+                                    ),
+                                    type="primary"
+                                ):
+
+                                    df = load_reservations()
+
+                                    df = df[
+                                        df["予約ID"]
+                                        !=
+                                        row["予約ID"]
+                                    ]
+
+                                    save_reservations(
+                                        df
+                                    )
+
+                                    st.session_state[
+                                        confirm_key
+                                    ] = False
+
+                                    st.success(
+                                        "予約をキャンセルしました。"
+                                    )
+
+                                    st.rerun()
+
+
+                            with col_no:
+
+                                if st.button(
+                                    "戻る",
+                                    key=(
+                                        f'no_{row["予約ID"]}'
+                                    )
+                                ):
+
+                                    st.session_state[
+                                        confirm_key
+                                    ] = False
+
+                                    st.rerun()
+
+
+# =========================================================
+# 管理者画面
+# =========================================================
+
+elif page == "管理者":
+
+    st.title(
+        "🔐 予約管理"
+    )
+
+    admin_id = st.text_input(
+        "管理者ID"
+    )
+
+    admin_password = st.text_input(
+        "管理者パスワード",
+        type="password"
+    )
+
+    if (
+        admin_id != ADMIN_ID
+        or
+        admin_password != ADMIN_PASSWORD
+    ):
+
+        st.info(
+            "管理者IDとパスワードを入力してください。"
+        )
+
+        st.stop()
+
+
+    df = load_reservations()
+
+    if df.empty:
+
+        st.info(
+            "現在予約はありません。"
+        )
+
+        st.stop()
+
+
+    df["予約日_dt"] = pd.to_datetime(
+        df["予約日"],
+        errors="coerce"
+    )
+
+
+    today_ts = pd.Timestamp(
+        date.today()
+    )
+
+
+    future_df = df[
+        df["予約日_dt"]
+        >=
+        today_ts
+    ].copy()
+
+
+    future_df = future_df.sort_values(
+        by=[
+            "予約日_dt",
+            "時間"
+        ]
+    )
+
+
+    st.subheader(
+        "今後の予約"
+    )
+
+
+    if future_df.empty:
+
+        st.info(
+            "今後の予約はありません。"
+        )
+
+    else:
+
+        display_df = future_df[
+            [
+                "予約日",
+                "時間",
+                "顧客ID",
+                "名前",
+                "人数",
+                "電話番号",
+                "備考"
+            ]
+        ].copy()
+
+        display_df["予約日"] = (
+            pd.to_datetime(
+                display_df["予約日"]
+            ).dt.strftime(
+                "%Y/%m/%d"
+            )
+        )
+
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+    st.divider()
+
+
     # =====================================================
     # 日付別確認
     # =====================================================
